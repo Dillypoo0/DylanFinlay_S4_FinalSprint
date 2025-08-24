@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <title>Binary Search Tree Builder</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 2rem; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 1rem; max-width: 900px; }
+    .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; }
+    input[type=text] { flex: 1; padding: .6rem .8rem; border: 1px solid #ccc; border-radius: 8px; }
+    button { padding: .6rem .9rem; border: 0; border-radius: 8px; background: #0b5ed7; color: white; cursor: pointer; }
+    button.secondary { background: #6c757d; }
+    pre { background: #f6f8fa; padding: .8rem; border-radius: 8px; overflow:auto; }
+    .tree { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Binary Search Tree Builder</h1>
+  <div class="card">
+    <div class="row">
+      <label for="numbers" class="muted">Enter numbers (comma/space separated):</label>
+    </div>
+    <div class="row">
+      <input id="numbers" type="text" placeholder="e.g. 7, 3, 9, 1, 5"/>
+      <label><input id="balanced" type="checkbox"/> Balanced</label>
+      <button id="submit">Submit</button>
+      <button id="showPrev" class="secondary">Show Previous</button>
+      <button id="loadSample" class="secondary">Load Sample</button>
+    </div>
+    <div id="result"></div>
+    <div id="previous"></div>
+  </div>
+
+  <script>
+    const $ = sel => document.querySelector(sel);
+
+    function renderTree(obj) {
+      if (!obj) return '∅';
+      const lines = [];
+      function walk(n, prefix="", isLeft=true) {
+        if (!n) return;
+        if (n.right) walk(n.right, prefix + (isLeft ? "│   " : "    "), false);
+        lines.push(prefix + (isLeft ? "└── " : "┌── ") + n.val);
+        if (n.left) walk(n.left, prefix + (isLeft ? "    " : "│   "), true);
+      }
+      walk(obj, "", true);
+      return `<pre class="tree">${lines.join('\n')}</pre>`;
+    }
+    function pretty(obj) { try { return JSON.stringify(obj, null, 2); } catch { return String(obj); } }
+
+    const SAMPLE_TREE_PRETTY = `{
+      "root": {
+        "value": 2,
+        "left": {
+          "value": 1,
+          "left": null,
+          "right": null
+        },
+        "right": {
+          "value": 4,
+          "left":  {
+            "value": 3,
+            "left": null,
+            "right": null
+          },
+          "right": {
+            "value": 5,
+            "left": null,
+            "right": null
+          }
+        }
+      }
+    }`;
+    function normalizeIncoming(obj) {
+      const unwrap = obj && obj.root ? obj.root : obj;
+      return convertValueKey(unwrap);
+    }
+    function convertValueKey(node) {
+      if (!node) return null;
+      const v = (node.val ?? node.value);
+      return { val: v, left: convertValueKey(node.left), right: convertValueKey(node.right) };
+    }
+
+    $("#loadSample").addEventListener("click", () => {
+      const parsed = JSON.parse(SAMPLE_TREE_PRETTY);
+      const normalized = normalizeIncoming(parsed);
+      $("#result").innerHTML =
+        `<h3>Sample Tree</h3>
+         ${renderTree(normalized)}
+         <details><summary>Raw JSON (indented)</summary><pre>${SAMPLE_TREE_PRETTY}</pre></details>`;
+    });
+
+    $("#submit").addEventListener("click", async () => {
+      const numbers = $("#numbers").value.trim();
+      const balanced = $("#balanced").checked;
+      if (!numbers) {
+        $("#result").innerHTML = "<p class='muted'>Please enter some numbers.</p>";
+        return;
+      }
+      const form = new URLSearchParams();
+      form.append("numbers", numbers);
+      form.append("balanced", balanced);
+
+      const r = await fetch("/process-numbers", {
+        method: "POST",
+        headers: {"Content-Type":"application/x-www-form-urlencoded"},
+        body: form.toString()
+      });
+      const data = await r.json();
+      const treeObj = JSON.parse(data.tree);
+      $("#result").innerHTML =
+        `<h3>Result (ID ${data.id}) ${data.balanced ? "(Balanced)" : ""}</h3>
+         <p><strong>Input:</strong> ${data.numbersCsv}</p>
+         ${renderTree(treeObj)}
+         <details><summary>Raw JSON</summary><pre>${pretty(treeObj)}</pre></details>`;
+    });
+
+    $("#showPrev").addEventListener("click", async () => {
+      const r = await fetch("/previous-trees");
+      const arr = await r.json();
+      if (!arr.length) { $("#previous").innerHTML = "<p class='muted'>No previous trees yet.</p>"; return; }
+      $("#previous").innerHTML = "<h3>Previous Trees</h3>" + arr.map(it => {
+        const treeObj = JSON.parse(it.tree);
+        return `<div style="margin:.8rem 0;padding:.6rem;border:1px solid #eee;border-radius:8px">
+          <div><strong>ID:</strong> ${it.id} · <strong>${it.balanced ? "Balanced" : "Unbalanced"}</strong> · <span class="muted">${it.createdAt}</span></div>
+          <div><strong>Input:</strong> ${it.numbersCsv}</div>
+          ${renderTree(treeObj)}
+          <details><summary>Raw JSON</summary><pre>${pretty(treeObj)}</pre></details>
+        </div>`;
+      }).join("");
+    });
+  </script>
+</body>
+</html>
